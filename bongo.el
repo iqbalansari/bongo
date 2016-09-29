@@ -5870,7 +5870,9 @@ These will come at the end or right before the file name, if any."
 (defun bongo-vlc-player-pause/resume (player)
   (if (bongo-player-interactive-p player)
       (process-send-string (bongo-player-process player) "pause\n")
-    (bongo-default-player-pause/resume player)))
+    (bongo-default-player-pause/resume player))
+  ;; Request status from the VLC process
+  (process-send-string (bongo-player-process player) "status\n"))
 
 (defun bongo-vlc-player-seek-to (player seconds)
   (when (not (bongo-player-interactive-p player))
@@ -5917,26 +5919,29 @@ These will come at the end or right before the file name, if any."
               (cond ((looking-at
                       (eval-when-compile
                         (rx (and line-start
-                                 "Remote control interface initialized."))))
+                                 "Command Line Interface initialized."))))
                      (when (null (bongo-player-get player 'timer))
                        (bongo-vlc-player-start-timer player)))
                     ((looking-at
                       (eval-when-compile
                         (rx (and line-start
-                                 "status change:"
                                  (zero-or-more (or space "("))
-                                 "play state:"
-                                 (zero-or-more space)
-                                 (submatch (one-or-more digit))
+                                 "state playing"
                                  (zero-or-more (or space ")"))
                                  line-end))))
-                     (cl-case (string-to-number (match-string 1))
-                       ((1 3)
-                        (bongo-player-put player 'paused nil)
-                        (bongo-player-paused/resumed player))
-                       ((2 4)
-                        (bongo-player-put player 'paused t)
-                        (bongo-player-paused/resumed player))))
+                     (progn
+                       (bongo-player-put player 'paused nil)
+                       (bongo-player-paused/resumed player)))
+                    ((looking-at
+                      (eval-when-compile
+                        (rx (and line-start
+                                 (zero-or-more (or space "("))
+                                 "state paused"
+                                 (zero-or-more (or space ")"))
+                                 line-end))))
+                     (progn
+                       (bongo-player-put player 'paused t)
+                       (bongo-player-paused/resumed player)))
                     ((looking-at
                       (eval-when-compile
                         (rx (and line-start
@@ -5988,6 +5993,9 @@ These will come at the end or right before the file name, if any."
                     ((looking-at
                       (eval-when-compile
                         (rx (and line-start
+                                 (zero-or-more space)
+                                 (zero-or-one ">")
+                                 (zero-or-more space)
                                  (submatch (one-or-more digit))
                                  (zero-or-more space)
                                  line-end))))
@@ -6017,7 +6025,7 @@ These will come at the end or right before the file name, if any."
   (let* ((process-connection-type nil)
          (arguments (append
                      (when bongo-vlc-interactive
-                       (append (list "-I" "oldrc" "--rc-fake-tty"
+                       (append (list "-I" "rc" "--rc-fake-tty"
                                      "--play-and-stop" "--play-and-exit")
                                (when (bongo-uri-p file-name)
                                  (list "-vv"))
